@@ -1,0 +1,122 @@
+from django.db import models
+
+import re
+from datetime import datetime
+from datetime import timedelta
+
+from bs4 import BeautifulSoup
+
+
+class Post(models.Model):
+
+    s3_object_id = models.TextField(default=None)
+    data_id = models.TextField(default=None)
+    company_name = models.TextField(default=None)
+    raw_title = models.TextField(default=None)
+    raw_url = models.TextField(default=None)
+    created_date = models.DateTimeField(auto_now=True)
+    post_date = models.DateTimeField(auto_now=False, default=None)
+
+    @staticmethod
+    def create_posts(post_data, filename):
+        if post_data:
+            for item in post_data:
+                post = Post(data_id=item.get('data_id'),
+                            raw_title=item.get('raw_title'),
+                            raw_url=item.get('raw_url'),
+                            post_date=item.get('post_date'),
+                            s3_object_id=filename,
+                            company_name=item.get('company_name'))
+                post.save()
+
+    @staticmethod
+    def scrape_feed(file):
+        soup = BeautifulSoup(file, 'html.parser')
+        feed = soup.find('div', id='organization-feed')
+        data_ids = Post.get_post_ids(feed)
+        raw_urls = Post.get_post_link(feed)
+        raw_titles = Post.get_post_title(feed)
+        post_dates = Post.get_post_date(feed)
+        company_name = Post.get_name(feed)
+        data = Post.consolidate_data(data_ids, raw_urls, raw_titles, post_dates, company_name)
+        return data
+
+    @staticmethod
+    def consolidate_data(data_ids, raw_urls, raw_titles, post_dates, company_name):
+        zip_data = list(zip(data_ids, raw_urls, raw_titles, post_dates))
+
+        data = []
+        for d in zip_data:
+            temp = {}
+            temp['company_name'] = company_name
+            temp['data_id'] = d[0]
+            temp['raw_url'] = d[1]
+            temp['raw_title'] = d[2]
+            temp['post_date'] = d[3]
+            data.append(temp)
+        return data
+
+    @staticmethod
+    def get_post_title(file):
+        divs = file.find_all('div', class_='feed-shared-update-v2__description')
+        titles = [div.text.strip() for div in divs]
+        return titles
+
+    @staticmethod
+    def get_post_link(file):
+        post_ids = Post.get_post_ids(file)
+        title = 'https://www.linkedin.com/feed/update/'
+        post_links = [title + post_id for post_id in post_ids]
+        return post_links
+
+    @staticmethod
+    def get_post_ids(file):
+        divs = file.find_all(attrs={'data-id': True})
+        post_ids = [div['data-id'] for div in divs]
+
+        promotion_regex = re.compile(r'l2mPromotion')
+        for post_id in post_ids:
+            if re.search(promotion_regex, post_id):
+                post_ids.remove(post_id)
+        return post_ids
+
+    @staticmethod
+    def get_post_date(file):
+        divs = file.find_all('span', class_='feed-shared-actor__sub-description')
+        raw_post_dates = [div.text.strip() for div in divs]
+        post_dates = [Post.resolve_post_date(date) for date in raw_post_dates]
+        return post_dates
+
+    @staticmethod
+    def resolve_post_date(date):
+        current_datetime = datetime.now().date()
+        date_regex = re.compile(r'(\d+)(mo|m|h|d|w|y)')
+        result = re.match(date_regex, date)
+        if result:
+            number = int(result.group(1))
+            unit = result.group(2)
+        else:
+            return None
+
+        if unit == 'm':
+            delta = timedelta(minutes=number)
+        elif unit == 'h':
+            delta = timedelta(hours=number)
+        elif unit == 'd':
+            delta = timedelta(days=number)
+        elif unit == 'w':
+            delta = timedelta(weeks=number)
+        elif unit == 'mo':
+            multiplier = 30 * number
+            delta = timedelta(days=multiplier)
+        elif unit == 'y':
+            multiplier = 365 * number
+            delta = timedelta(days=multiplier)
+
+        post_date = current_datetime - delta
+        return post_date
+
+    @staticmethod
+    def get_name(file):
+        name = file.find('span', class_='feed-shared-actor__name').text.strip()
+        return name
