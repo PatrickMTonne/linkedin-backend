@@ -30,14 +30,14 @@ class Post(models.Model):
                 post.save()
 
     @staticmethod
-    def scrape_feed(file):
-        soup = BeautifulSoup(file, 'html.parser')
+    def scrape_feed(filename, file_content):
+        soup = BeautifulSoup(file_content, 'html.parser')
         feed = soup.find('div', id='organization-feed')
         data_ids = Post.get_post_ids(feed)
         raw_urls = Post.get_post_link(feed)
         raw_titles = Post.get_post_title(feed)
         post_dates = Post.get_post_date(feed)
-        company_name = Post.get_name(feed)
+        company_name = Post.get_name(filename)
         data = Post.consolidate_data(data_ids, raw_urls, raw_titles, post_dates, company_name)
         return data
 
@@ -57,10 +57,21 @@ class Post(models.Model):
         return data
 
     @staticmethod
+    def multiple_replace(adict, text):
+        regex = re.compile("|".join(map(re.escape, adict.keys())))
+        return regex.sub(lambda match: adict[match.group(0)], text)
+
+    @staticmethod
     def get_post_title(file):
         divs = file.find_all('div', class_='feed-shared-update-v2__description')
-        titles = [div.text.strip() for div in divs]
-        return titles
+        raw_titles = [div.text.strip().replace('\n', '') for div in divs]
+
+        replace_dict = {'#hashtag': '#',
+                        'hashtag#': '#',
+                        'see more': '',
+                        '...see more': ''}
+
+        return [Post.multiple_replace(replace_dict, title) for title in raw_titles]
 
     @staticmethod
     def get_post_link(file):
@@ -72,12 +83,13 @@ class Post(models.Model):
     @staticmethod
     def get_post_ids(file):
         divs = file.find_all(attrs={'data-id': True})
-        post_ids = [div['data-id'] for div in divs]
+        raw_post_ids = [div['data-id'] for div in divs]
 
         promotion_regex = re.compile(r'l2mPromotion')
-        for post_id in post_ids:
-            if re.search(promotion_regex, post_id):
-                post_ids.remove(post_id)
+        for raw_post_id in raw_post_ids:
+            if re.search(promotion_regex, raw_post_id):
+                raw_post_ids.remove(raw_post_id)
+        post_ids = [x.strip('urn:li:activity:') for x in raw_post_ids]
         return post_ids
 
     @staticmethod
@@ -118,5 +130,4 @@ class Post(models.Model):
 
     @staticmethod
     def get_name(file):
-        name = file.find('span', class_='feed-shared-actor__name').text.strip()
-        return name
+        return file.lstrip('1234567890_').replace('_', ' ')
