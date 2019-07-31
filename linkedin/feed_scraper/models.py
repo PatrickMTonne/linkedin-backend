@@ -13,7 +13,6 @@ class Post(models.Model):
     data_id = models.TextField(default=None)
     company_name = models.TextField(default=None)
     raw_title = models.TextField(default=None)
-    raw_url = models.TextField(default=None)
     created_date = models.DateTimeField(auto_now=True)
     post_date = models.DateTimeField(auto_now=False, default=None)
 
@@ -23,7 +22,6 @@ class Post(models.Model):
             for item in post_data:
                 post = Post(data_id=item.get('data_id'),
                             raw_title=item.get('raw_title'),
-                            raw_url=item.get('raw_url'),
                             post_date=item.get('post_date'),
                             s3_object_id=filename,
                             company_name=item.get('company_name'))
@@ -34,25 +32,22 @@ class Post(models.Model):
         soup = BeautifulSoup(file_content, 'html.parser')
         feed = soup.find('div', id='organization-feed')
         data_ids = Post.get_post_ids(feed)
-        raw_urls = Post.get_post_link(feed)
         raw_titles = Post.get_post_title(feed)
         post_dates = Post.get_post_date(feed)
         company_name = Post.get_name(filename)
-        data = Post.consolidate_data(data_ids, raw_urls, raw_titles, post_dates, company_name)
-        return data
+        return Post.consolidate_data(data_ids, raw_titles, post_dates, company_name)
 
     @staticmethod
-    def consolidate_data(data_ids, raw_urls, raw_titles, post_dates, company_name):
-        zip_data = list(zip(data_ids, raw_urls, raw_titles, post_dates))
+    def consolidate_data(data_ids, raw_titles, post_dates, company_name):
+        zip_data = list(zip(data_ids, raw_titles, post_dates))
 
         data = []
         for d in zip_data:
             temp = {}
             temp['company_name'] = company_name
             temp['data_id'] = d[0]
-            temp['raw_url'] = d[1]
-            temp['raw_title'] = d[2]
-            temp['post_date'] = d[3]
+            temp['raw_title'] = d[1]
+            temp['post_date'] = d[2]
             data.append(temp)
         return data
 
@@ -74,13 +69,6 @@ class Post(models.Model):
         return [Post.multiple_replace(replace_dict, title) for title in raw_titles]
 
     @staticmethod
-    def get_post_link(file):
-        post_ids = Post.get_post_ids(file)
-        title = 'https://www.linkedin.com/feed/update/'
-        post_links = [title + post_id for post_id in post_ids]
-        return post_links
-
-    @staticmethod
     def get_post_ids(file):
         divs = file.find_all(attrs={'data-id': True})
         raw_post_ids = [div['data-id'] for div in divs]
@@ -89,15 +77,13 @@ class Post(models.Model):
         for raw_post_id in raw_post_ids:
             if re.search(promotion_regex, raw_post_id):
                 raw_post_ids.remove(raw_post_id)
-        post_ids = [x.strip('urn:li:activity:') for x in raw_post_ids]
-        return post_ids
+        return [x.strip('urn:li:activity:') for x in raw_post_ids]
 
     @staticmethod
     def get_post_date(file):
         divs = file.find_all('span', class_='feed-shared-actor__sub-description')
         raw_post_dates = [div.text.strip() for div in divs]
-        post_dates = [Post.resolve_post_date(date) for date in raw_post_dates]
-        return post_dates
+        return [Post.resolve_post_date(date) for date in raw_post_dates]
 
     @staticmethod
     def resolve_post_date(date):
@@ -125,8 +111,7 @@ class Post(models.Model):
             multiplier = 365 * number
             delta = timedelta(days=multiplier)
 
-        post_date = current_datetime - delta
-        return post_date
+        return current_datetime - delta
 
     @staticmethod
     def get_name(file):
