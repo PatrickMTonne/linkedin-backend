@@ -115,4 +115,4 @@ class Post(models.Model):
 
     @staticmethod
     def get_name(file):
-        return file.lstrip('1234567890_').replace('_', ' ')
+        return file.find('h1', class_='org-top-card-summary__title')['title']
