@@ -28,13 +28,13 @@ class Post(models.Model):
                 post.save()
 
     @staticmethod
-    def scrape_feed(filename, file_content):
+    def scrape_feed(file_content):
         soup = BeautifulSoup(file_content, 'html.parser')
         feed = soup.find('div', id='organization-feed')
         data_ids = Post.get_post_ids(feed)
         raw_titles = Post.get_post_title(feed)
         post_dates = Post.get_post_date(feed)
-        company_name = Post.get_name(filename)
+        company_name = Post.get_name(soup)
         return Post.consolidate_data(data_ids, raw_titles, post_dates, company_name)
 
     @staticmethod
@@ -115,4 +115,4 @@ class Post(models.Model):
 
     @staticmethod
     def get_name(file):
-        return file.find('h1', class_='org-top-card-summary__title')['title']
+        return file.find_all('h1', class_='org-top-card-summary__title')[0]['title']

@@ -11,5 +11,5 @@ def lambda_handler(event, context):
     filename = str(file_obj['s3']['object']['key'])
     file = s3.get_object(Bucket='sam-test-132', Key=filename)
     file_content = file['Body'].read().decode('utf-8')
-    data = Post.scrape_feed(filename, file_content)
+    data = Post.scrape_feed(file_content)
     Post.create_posts(data, filename)
